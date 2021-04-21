@@ -1,0 +1,154 @@
+---
+title: Navigating files and directories with NodeJS
+date: 2020-12-15
+abstract: A straightforward problem with not so straightforward solutions
+published: false
+tags: [javascript, generators]
+---
+
+Listing files in directories has to be one of the most common actions that users perform.
+The behavior is virtually the same, from jumping on to a Unix system running `ls` to visually navigating through the GUI. However, _the implementation_ can vary wildly.
+
+## A few approaches
+There are [plenty](https://stackoverflow.com/questions/10049557/reading-all-files-in-a-directory-store-them-in-objects-and-send-the-object) [of](https://stackoverflow.com/questions/33775113/count-the-number-of-files-in-a-directory-using-javascript-nodejs/43747896) [examples](https://stackoverflow.com/questions/32511789/looping-through-files-in-a-folder-node-js) [on](https://stackoverflow.com/questions/63559958/how-can-i-list-all-the-files-in-a-directory-node-js-ejs) Stack Overflow as this topic seems to be rehashed every so often. For JavaScript development, the temptation to pull in a package from NPM is all too great. There are [options](https://www.npmjs.com/search?q=list%20files%20in%20directory) to choose from as well. This [totalist](https://www.npmjs.com/package/totalist) one is quite popular, with 1M+ _weekly_ downloads, although the implementation can be improved on as we'll see below.
+
+The answers on Stack Overflow are expectedly less polished than the libraries on NPM. A good amount of them will generally include reading directories synchronously, or calling `fs.stat` to check if an entry is a file or a directory, instead of relying on the output of `fs.readdir`. Many of the answers are also more convoluted, or provide an iterative solution despite the fact that a recursive one is more concise and has the ability to display the full directory tree structure. [Articles](https://medium.com/stackfame/get-list-of-all-files-in-a-directory-in-node-js-befd31677ec5) [written](https://coderrocketfuel.com/article/get-all-of-the-files-in-a-directory-using-node-js) on this topic also tend to follow a similar pattern.
+
+## Reinventing the wheel
+The question then is, can we do a little bit better (_the answer is yes_) here by:
+```
+1. Listing the full tree structure of a folder
+2. Doing it in an asynchronous, non-blocking way
+3. Use only native JavaScript (NodeJS) functionality (no npm packages!)
+```
+
+Take a look at the following implementation. It requires NodeJS v11.0.0+ and uses the `Dirent` object from `fs.readdir`. It also recurses when it encounters another directory. Therefore, the returned array will contain all of the files and any files in nested directories as well:
+~~~js
+import { readdir } from 'fs/promises'; // Available NodeJS v10.10.0+
+import { join } from 'path';
+
+async function ls(path = '.') {
+  const directories = await readdir(path, { withFileTypes: true });
+  const files = await Promise.all(
+    directories.map(async (file) => {
+      const filepath = join(path, file.name);
+      if (file.isDirectory()) return ls(filepath);
+      else if (file.isFile()) return filepath;
+    }),
+  );
+  return files.flat(); // Available NodeJS v11.0.0+
+}
+
+console.log(await ls('./node_modules/typescript'));
+~~~
+Essentially, by passing `{ withFileTypes: true }`, the response from `readdir` is transformed into a `Promise<Dirent[]>` type. We can see the two interfaces with the `withFileTypes` field set to either `true` or `false`. Notice how different they can be, with one returning an object and the other a string or buffer:
+~~~js
+/**
+ * Asynchronous readdir(3) - read a directory.
+ * @param path A path to a file. If a URL is provided, it must use the `file:` protocol.
+ * @param options The encoding (or an object specifying the encoding), used as the encoding of the result. If not provided, `'utf8'` is used.
+ */
+function readdir(path: PathLike, options?: BaseEncodingOptions & { withFileTypes?: false } | BufferEncoding | null): Promise<string[] | Buffer[]>;
+
+/**
+ * Asynchronous readdir(3) - read a directory.
+ * @param path A path to a file. If a URL is provided, it must use the `file:` protocol.
+ * @param options If called with `withFileTypes: true` the result data will be an array of Dirent.
+ */
+function readdir(path: PathLike, options: BaseEncodingOptions & { withFileTypes: true }): Promise<Dirent[]>;
+~~~
+The `Dirent` object type allows us to avoid an additional function call, the `fs.stat` on every file, and instead rely on the methods that it already has, namely `isFile` and `isDirectory`:
+~~~js
+export class Dirent {
+    isFile(): boolean;
+    isDirectory(): boolean;
+    isBlockDevice(): boolean;
+    isCharacterDevice(): boolean;
+    isSymbolicLink(): boolean;
+    isFIFO(): boolean;
+    isSocket(): boolean;
+    name: string;
+}
+~~~
+Still, the example above is a bit involved. It is calling promises, mapping arrays, flattening arrays. We can simplify it further by using generators and introduce some really useful functionality.
+
+## Working with generators
+[Generators](https://en.wikipedia.org/wiki/Generator_(computer_programming)) have been around for a long time, and are not a new JavaScript concept. Support has existed in NodeJS since version 4.0, so quite a while now. Let's take a look at a simple example from the [MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator) documentation:
+~~~js
+function* generator() {
+  yield 1;
+  yield 2;
+  yield 3;
+}
+
+const gen = generator();       // execution paused at "yield 1"
+
+console.log(gen.next().value); // 1 is returned, execution paused at "yield 2"
+console.log(gen.next().value); // 2 is returned, execution paused at "yield 3"
+console.log(gen.next().value); // 3 is returned, function completes
+~~~
+The `function*` notation defines a generator function, that conforms to both an iterable and an interator protocol. The `yield` keyword delegates control, and calling `.next()` on a generator returns the value yielded by the `yield` keyword. Note, that a `for` loop will _automatically_ call `.next()`. Lastly, execution also _pauses_ on each `yield` statement until `.next()` is called. So, knowing this, let's rewrite our `ls` implementation above using generators:
+~~~js
+import { readdir } from 'fs/promises';
+import { join } from 'path';
+
+async function* ls(path = '.') {
+  const directories = await readdir(path, { withFileTypes: true });
+  for (const file of directories) {
+    if (file.isDirectory()) yield* ls(join(path, file.name));
+    else if (file.isFile()) yield join(path, file.name);
+  }
+}
+
+/** We need to iterate over the results */
+async function run() {
+  for await (const result of ls('./node_modules/typescript')) {
+    console.log(result);
+  }
+}
+~~~
+The main difference now is that we no longer have the `Promise.all` call. We simply iterate through the directories returned by `readdir`. We either return a value if we find a file (`yield join(...)`) or we recursively _delegate_ to ourselves (`yield* ls(join(...))`). Additionally, the [for await](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for-await...of) notation allows us to iterate over our generator (since it is an async iterable). The code is much more concise. Notice that we'll need an extra function to loop over the results. We can no longer log them out now without some additional processing. However, this tradeoff is well worth it as we'll see shortly.
+
+## Short circuiting
+Usually, the main driver behind listing files in folders or directories is searching. We never want to just _list files_ for the sake of it, we're really looking for a specific one after all. Generators enable us to short circuit, or return early from our execution. Consider the following code block, where we replace the `run` function with `search`:
+~~~js
+import { readdir } from 'fs/promises';
+// Import basename to get *just* the file name
+import { join, basename } from 'path';
+
+// async function* ls(path = '.') { ... }
+
+async function search(path, filename) {
+  for await (const result of ls(path)) {
+    if (basename(result) === filename) {
+      // Return as soon as we have a match
+      return result;
+    }
+  }
+}
+
+console.log(await search('./node_modules/typescript', 'README.md'));
+~~~
+Remember that with generators, the function is only executed up to the `yield` statement. Control is then delegated by `.next()` calls in lock step with `yield`. The `for` loop automatically calls `.next()` on our `ls` iterable. As soon as we have a match, we return and exit the loop early. Compare this with our original implementation using `Promise.all`. That implementation has no clean way to exit the control flow when a match is found. Therefore, we have to list out the full directory tree structure, _and then_ finally search for the file we want. An equivalent search function for the promise case would look like the following:
+~~~js
+async function search(path, filename) {
+  const files = await ls(path); // Get *all* files first
+  for (const result of files) {
+    if (basename(result) === filename) {
+      return result;
+    }
+  }
+}
+
+~~~
+Notice how on the _second line_ we return **all files in all directories**, the full tree, then we have another loop that searches through all of the files again. The differences between the two search functions are very subtle. The `for await` is an integral part that allows us to iterate and compare each returned file one at a time. If you tried to do the same with the promise example, you would get the following error message:
+```
+for await (const result of ls(path)) {
+                           ^
+
+TypeError: ls(...) is not a function or its return value is not async iterable
+```
+
+So, our original implementation will run in about _O(n)_ time for all cases. With generators, we have the potential to cut that in half, _O(n/2)_ if the file is in the middle of the tree, or even better, close to _O(1)_, if the file is near the very beginning of the tree due to the inherent nature of generators and async iterables.
+
+Consider using this solution next time you have to list files in directories, as it will scale better, is easier to read, and it does not require installing any additional libraries.

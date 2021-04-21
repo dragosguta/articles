@@ -1,0 +1,126 @@
+---
+title: Understanding JavaScript inheritance
+date: 2019-06-08
+abstract: A primer on prototypal inheritance in JavaScript
+published: false
+tags: [javascript]
+---
+
+JavaScript inheritance is different from other object-oriented languages due to the prototypal nature of the language. Understanding this prototype behavior will help prevent common pitfalls and sneaky issues that may unexpectedly arise. This article covers inheritance and can be especially useful for new developers that are just starting to work with the Javascript language.
+
+We'll be diving right in, but if you'd like more background information (and also more examples) on prototypes, see Mozilla's awesome [documentation](https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Objects/Object_prototypes) on the subject.
+
+## Inheritance with prototypes
+Let's start off with a generic `Robot` object with the following methods:
+~~~js
+function Robot() {}
+
+Robot.prototype.turnOn = function() {}
+Robot.prototype.turnOff = function() {}
+Robot.prototype.isPoweredOn = function() {}
+Robot.prototype.captureImage = function() {}
+~~~
+So we have our "methods" (function defined on a class) attached to our prototype. The `Robot` can capture images, turn on/off, and report it's state.
+
+Eventually, we'll want to specialize our `Robot` into something more specific.
+~~~js
+function SpeedCamera() {}
+
+SpeedCamera.prototype.calculateObjectSpeed = function (x, y, z) {}
+
+const cameraRobot = new SpeedCamera()
+~~~
+
+The `SpeedCamera` instance might have a new method (`calculateObjectSpeed`), but it will need all of the previous methods inherited from the base `Robot` class. After all, it should be able to turn on/off, report its state, and surely capture images.
+
+Let's consider the following ways to implement inheritance:
+~~~js
+/** Option 1: Copy the functionality on the prototype */
+SpeedCamera.prototype = {
+  turnOn: Robot.prototype.turnOn,
+  turnOff: Robot.prototype.turnOff,
+  isPoweredOn: Robot.prototype.isPoweredOn,
+  captureImage: Robot.prototype.captureImage
+}
+
+/** Option 2: Set the two prototypes equal to each other */
+SpeedCamera.prototype = Robot.prototype
+
+/** Option 3: Set the SpeedCamera prototype to a new instance of Robot */
+SpeedCamera.prototype = new Robot()
+~~~
+
+The first option isn't very good. The properties might be available on the object, but they are simply _copied_ over from the `Robot` prototype. Implementing this is a little daunting since we would have to copy those same properties over and over again for every new instance of `SpeedCamera`. It would also seem like a violation of [DRY](https://en.wikipedia.org/wiki/Don%27t_repeat_yourself). Additionally, this approach would introduce a higher memory overhead. Lastly, this method also fails the `instanceof` check, so we know our `SpeedCamera` instantiation (`cameraRobot`) is not a true `Robot`.
+~~~js
+console.assert(cameraRobot instanceof SpeedCamera) // pass
+console.assert(cameraRobot instanceof Robot) // fail
+~~~
+The second approach works with respect to the `instanceof` operation. Now `SpeedCamera` is definitely an instance of `Robot`. _However_, be aware that this approach will have some very nasty implications. Any changes on the `SpeedCamera` prototype will also propagate to the `Robot` prototype since they are essentially the same object. It's possible then to override a method on the super class directly from the subclass, which will certainly introduce some bugs further down the prototype chain.
+
+The third approach is what we actually want. Now, the `instanceof` operator will work correctly, and also report that our `cameraRobot` is indeed a subclass of `Robot`. So now when we call any of the methods on our subclass, the JavaScript runtime will search for the method and will travel along the prototype chain until it either encounters the method or it reaches the default top-level `Object`, at which point it will return `undefined`.
+
+For example, if we were to invoke the following method: `cameraRobot.captureImage()` the runtime will first check `this.captureImage()` where the `this` keyword will refer to the `SpeedCamera` instance. Since the method will not be found, the runtime will proceed to look on the prototype, checking the `Robot` instance referenced by `SpeedCamera.prototype`. The method won't be found there, however, it will be found on `Robot.prototype` which is the next step up.
+
+## Rebuilding the chain
+Lastly, there is still one more thing we have to address. By setting the `SpeedCamera` prototype directly, we are essentially blowing away the reference to the original constructor for instantiations. This can be observed with the following assertion:
+~~~js
+console.assert(cameraRobot.constructor === SpeedCamera) // fail
+~~~
+The implications of this is that any consumers of our `SpeedCamera` class might expect the above to pass. It could also be useful to determine which function created our instance. So let's go ahead and fix it with the following:
+~~~js
+Object.defineProperty(SpeedCamera.prototype, 'constructor', {
+  enumerable: false,
+  value: SpeedCamera,
+  writable: true
+})
+~~~
+
+Essentially, what we've done here is defined a property on `SpeedCamera.prototype`, named `constructor` that is _not_ enumerable. So it will _not_ show up in `for ( let prop in SpeedCamera ) {}` loops. Its value will be the value of the subclass itself, and it will also be writable. Now the following should all pass:
+~~~js
+console.assert(cameraRobot.constructor === SpeedCamera) // pass
+console.assert(cameraRobot instanceof SpeedCamera) // pass
+console.assert(cameraRobot instanceof Robot) // pass
+~~~
+
+There's still one more thing to be aware of. The `instanceof` operator is slightly misleading. In JavaScript, this operator will simply check _if_ the object prototype on the _right side_ is found in the prototype chain of the object on the _left side_. That's it. That's all it does. The operator does not check instances but rather prototypes. JavaScript is a dynamic language, and we've directly manipulated the prototype of the objects above, so be careful when depending on `instanceof` operations. Double check that the prototypes being compared are exactly what you would expect them to be within the given context.
+
+## Inheritance with classes
+ES6 classes simplify a lot of the functionality from above, take a look at the following:
+~~~js
+class Robot {
+	constructor() {}
+
+	turnOn() {}
+
+	turnOff() {}
+
+	isPoweredOn() {}
+
+	captureImage() {}
+}
+
+class SpeedCamera extends Robot {
+	constructor() {
+		super() // Don't forget the super call!
+	}
+
+	calculateObjectSpeed(x, y, z) {}
+}
+~~~
+
+Notice that our previous assertions should still pass. All of the work of updating the `SpeedCamera` prototype, and setting the constructor, is masked by the syntactical sugar that ES6 classes provide 🎉. Classes simplify a lot of things, but keep in mind that underneath it all, we still have the prototype chain.
+
+## Reusing methods
+There's one last thing that we should talk about, that we haven't really talked about yet. Consider the code blocks below,  is there a difference between the two objects?
+~~~js
+// first block
+function SpeedCamera() {}
+
+SpeedCamera.prototype.calculateObjectSpeed = function (x, y, z) {}
+
+// second block
+function SpeedCamera() {
+	this.calculateObjectSpeed = function (x, y, z) {}
+}
+~~~
+The answer is yes. In the first code block, the `calculateObjectSpeed` method is defined on the prototype of `SpeedCamera`. This means that all instances of `SpeedCamera` will share this one single method. The second code block is slightly different. Each instantiation of `SpeedCamera` will get _it's own_ personal `calculateObjectSpeed` method, and therefore this method will not be shared across instances. Keep that in mind when implementing inheritance, as the second code block will naturally have a higher memory overhead.
