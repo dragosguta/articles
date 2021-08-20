@@ -1,0 +1,85 @@
+---
+title: UI Components and Storybook
+date: "2021-04-09"
+tags: [engineering]
+abstract: "A pitch for using Storybook and adopting a component driven development process for building modern and modular user interfaces."
+---
+
+It took me a while to understand the point of using something like [Storybook](https://storybook.js.org/).
+The additional work to set up, manage, and use it for a given project seemed unnecessary, and I simply did not understand how
+it could live up to its tagline of "[streamlining] UI development". It finally clicked for me once I started working within a larger
+organization, development team, and with various stakeholders. These days, I almost always set up Storybook in any new UI project as the
+value that it provides certainly outweighs the time spent to set it up.
+
+## Component driven development
+
+I'm sure by now a lot has been said on the awesome benefits of component driven development (CDD). I've certainly become a believer and subscribe to the methodology.
+To summarize, the goal of CDD is to produce reusable components. These components are very similar in theory to LEGO pieces, a perfect
+analogy that has been constantly used to describe them. LEGO pieces form an end product that can be broken down and recycled over and over,
+to produce something new. Good components attempt to match this exact behavior, to be assembled and reassembled across countless user interfaces (UIs).
+
+As a side note, I don't believe that CDD should be solely reserved for front-end development, although that is mainly where it has gained its popularity. The goal
+is always to create reusable pieces of code and as such, I am sure that a lot of the concepts can be applied across the full stack.
+
+Still, I'll be mostly focusing and discussing CDD in terms of front-end development since the focus is both on CDD and Storybook. There
+are some great resources to slowly ease into the mindset, including Storybook's own [tutorial series](https://storybook.js.org/tutorials/).
+
+## Isolation and interfaces
+
+I was working on a React application years ago that had a resource creation "wizard" or flow. Essentially, the user is asked to complete
+a series of steps to define a business resource that is then managed through the UI. This was all standard behavior and a pretty generic pattern
+for creation, nothing new or out of the ordinary on the screen. The problem was with the code. I found myself staring at an extensive file with deeply nested [DOM elements](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model/Introduction)
+(they were really JSX elements to be specific). A change in this file meant that the development UI would re-render, and that I would have to go to the beginning of the creation process.
+Now, this isn't exactly a big deal... but it is incredibly annoying to wait ~5 seconds or so for every change. What made things worse is that I needed to modify something on the last step,
+so every change meant that I would have to cycle through the creation process until I reached the last step.
+
+I suffered through it at the time, without realizing that this would have been a perfect use case for a tool like Storybook. If I had
+been able to work with that specific piece of code in isolation, I would have been able to focus more on the business logic, eliminate the progress
+step cycling, and save some time and frustration. Granted, that particular UI was not really following a CDD process, so I would still
+need to untangle the current implementation, and then create some sort of reusable component(s) out of it.
+
+Even so, the ability to model a piece of logic like this is crucial to adopting a component driven mindset. Working in isolation results in
+a fundamental shift in thinking about how to best implement a specific component and ultimately a feature. The way that I approached development
+changed once I started working with Storybook and CDD. I started to think about the code that I was writing from a functional programmming perspective.
+From this perspective each component, and block of logic is broken down into three fundamental concepts:
+
+```
+1. inputs (in the form of props)
+2. actions on inputs (aka business logic)
+3. outputs (via onChange function calls)
+```
+
+The first concept refers to the inputs that are coming into the component. In React, these would be the properties passed in. This is also what creates
+the interface for the component. The next concept refers to the actions (or business logic) performed _inside_ of the component. I would include any hooks in here as well, and technically
+side effects. This is also entirely optional, it's possible that a component
+is used solely for presentational purposes. Otherwise, all logic responsible for making this component "work" should be encapsulated inside of it.
+
+Lastly, the component may or may not have outputs. If it does have outputs, it should respond via an `onChange` function call, essentially emitting
+its current state to the parent. This should be the only method of communication between a child component and a parent component in order to keep
+a clean interface.
+
+Working on components in this manner, developing them in Storybook and then using them in the main UI becomes trivial. It might seem like what I'm really
+preaching is more about well designed interfaces, but make no mistake, working inside of Storybook, in isolation like this, forces the developer to think in a way that
+naturally results in components with encapsulation and clean, simple interfaces. When all other distractions and elements are removed, all that remains are the inputs
+that a component needs to behave in a certain way, and the optional outputs that it might emit. Storybook ultimately encourages this method of thinking through the use of Stories.
+
+## Demonstrating progress
+
+There have been countless times when I've had to get some quick feedback
+on components that I've built. Normally, I can just bring up a development build of the UI... but what if I have to make some _quick_
+changes? What if I have to change a color, or adjust some spacing, to get everything _juuuuust_ right. Do I wait for the build to run, after all
+every second counts in a meeting as fatigue slowly creeps in the longer it goes.
+
+Usually it's simpler to just showcase the component right in Storybook. The isolation aspect removes any distractions, and re-renders, and focuses the conversation
+on the design of the component at hand. This is especially useful when working directly with a design team. Storybook enables developers to take a design prototype,
+implement a "first draft" version of the components in the prototype, and turn around to get some feedback. This iterative loop encourages a developer and a designer to pair up and work together
+to achieve an implementation that closely matches a design prototype. The designer is free to focus on the presentational aspect
+while the developer demonstrates how the component behaves and responds to different inputs -- all within Storybook. The developer drives and owns
+this process. Components are then transferred to the main UI once both the developer and designer are satisfied with the implementation.
+
+## Closing thoughts
+
+I've been a big fan of Storybook for some time now. I will continue to use it in all of my future projects
+mainly due to the fact that it enables a component driven development process. A process where the developer
+is pushed in the positive direction of clean interfaces, encapsulation, and where gathering feedback is made simple
+and encouraged due to the isolationist nature of the environment.
