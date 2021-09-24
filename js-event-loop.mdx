@@ -1,0 +1,80 @@
+---
+title: Event loops and runtime environments
+date: "2021-06-10"
+tags: [javascript, nodejs]
+abstract: "Putting the pieces together on the internals of JavaScript. A look at queues, stacks, heaps, loops, and APIs that power modern day web based applications."
+---
+
+I've been working with JavaScript for some time now. In all this time, I feel like I've intuitively grasped the intricacies of the language and the call stack without fully understanding the event loop and how it all works together. Sure, I've read about it all, poured over the [MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop) documentation and watched plenty of videos... but it has never really _clicked_, until I came across [Philip Robert's talk on the event loop](https://2014.jsconf.eu/speakers/philip-roberts-what-the-heck-is-the-event-loop-anyway.html) from 2014, which, by today's standards, can be considered ancient. I'm going to attempt to discuss and put together an updated diagram based on his talk, as well as add some of my own thoughts so that I can finally make this concept concrete in my mind (and hopefully yours).
+
+## Zero Delays
+
+I've had plenty of encounters with the call stack, which sometimes manifest as the classic case of calling `setTimeout()` with `0` time. This is useful to defer a piece of functionality, and was a lot more useful prior to `requestAnimationFrame` as a way to allow a repaint in the Browser to happen ahead of the `setTimeout`. You can take a look and see how the deferred execution works with the following example:
+
+```js
+console.log("foo");
+setTimeout(() => console.log("bar"), 0);
+console.log("baz");
+```
+
+The output in the console will be:
+
+```
+foo
+baz
+bar
+```
+
+If you've come across this before you'll know that, for starters, calling `setTimeout` with a delay of `0` milliseconds _doesn't actually mean_ that the function will execute right away. The function needs to wait for all of the items in the call stack to complete. In fact, the _delay_ is not a guaranteed time, but rather the minimum time required before processing the request (aka, the callback). This is usually a popular interview "gotcha" question for junior and mid level developers, as it requires deeper understanding of how functions are executed.
+
+## Words and definitions
+
+To understand the `setTimeout` above and the reason that it works the way it works, we must first understand the responsibility of the event loop... and before we can dive into that, we have to first define a few concepts. We'll focus on JavaScript in the Browser (Google Chrome or Mozilla Firefox) specifically, but the same concepts apply to NodeJS as well.
+
+In the Chrome browser we have the [V8 engine](<https://en.wikipedia.org/wiki/V8_(JavaScript_engine)>) responsible for executing JavaScript code. Firefox has a similar implementation, called [SpiderMonkey](https://en.wikipedia.org/wiki/SpiderMonkey). The purpose of these engines is simply to translate source code, written by developers, into machine code, understandable by the computer. The V8 engine and SpiderMonkey are part of the runtime environment of the Browser.
+
+There are other elements in the runtime environment, of which the most notable are [Web APIs](https://developer.mozilla.org/en-US/docs/Web/API). These APIs expose interfaces for the engine to integrate with. They include popular JavaScript constructs like the DOM API, Fetch API, and the older XMLHttpRequest API. These APIs are available through interfaces, some more well known such as `setTimeout` and `setInterval` that work with timers. In short, these APIs and interfaces are not necessarily part of the JavaScript language, but rather they are exposed functionality provided by the Browser implementation, usually in a different language such as C++ in the case of Chrome.
+
+The last thing to mention here is the idea of task queues. According to the [spec](https://html.spec.whatwg.org/multipage/webappapis.html#event-loop) event loops will have at least one task queue, and a microtask queue. A [task](https://html.spec.whatwg.org/multipage/webappapis.html#concept-task) is a fairly abstract concept, for our purposes here, we can associate a task with a callback function. There are different types of tasks and so, there are different task queues... but note that according to the spec a _microtask queue_ is not a _task queue_. It's behavior is a bit different, and I think this will all make sense once we walk through the event loop in full.
+
+## The complete picture
+
+We've talked about all of these concepts separately, but I think it will only makes sense once we put it all together. Let's review the following diagram and pause at each step.
+
+![js-event-loop](/js-event-loop.svg)
+
+All of this should be somewhat familiar (even if vaguely) with the exception of the Heap. We haven't really talked about it, and it's not as important in this context as everything else, but it is included for completeness. Just know, that the Heap is responsible for memory allocation, and philosophically the whole purpose of a program is to ultimately read and write to and from memory.
+
+We can start at step 1, the beginning of a script. An initial function, `main`, is placed on the call stack. Some initial memory allocation also happens on the Heap. More and more function calls are then placed on the stack as the JavaScript engine (V8 or SpiderMonkey, or others) makes its way through the script file. As functions end, they are taken out of the stack. Functions that call Web APIs are actually placed on the stack, executed, and then removed in short order. They are sent to the Browser to handle as part of step 2, where they take _some_ time to complete. Often, these are asynchronous functions, such as network calls via `fetch` for example.
+
+Once a task completes, the Browser places it in either the **Macro**task queue or the **Micro**task queue in step 3, depending on the type of task. Generally, Promises and any callbacks passed to `queueMicrotask` (see the [MDN](https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide) docs for details) go in the **Micro**task queue, and all others go in the **Macro**task queue. The event loop, in step 4, then acts as a _consumer_ and reads from these queues and places the tasks back on to the call stack, but will wait _until the call stack is empty_ to do so. The event loop also performs this slightly differently depending on the queue. It will read the oldest task in the macro queue, place it on the stack, run the task (callback function), _and then_ move on to the micro queue, step 5 in the diagram. The difference here is that the event loop will completely empty the **micro** queue before picking up the _next_ task from the **macro** queue.
+
+## The algorithm
+
+I think we are at a point now where we can formalize the above into a much more succinct algorithmic explanation for the event loop. So, here it goes:
+
+```
+1. Select the oldest task from the Macrotask queue (task X)
+2. If "task X" is null (aka, the queue is empty) then jump ahead to step 6
+3. Add "task X" to call stack
+4. Run "task X"
+5. Remove "task X" from the call stack
+6. Go to Microtask queue
+	6.1 Select the oldest task (task Y) in the queue
+	6.2 If "task Y" is null (aka, the queue is empty), jump to step 6.6
+	6.3 Add "task Y" to call stack
+	6.4 Run "task Y"
+	6.5 Remove "task Y" from the call stack
+	6.6 If queue is not empty, go to step 6.1 else go to step 7
+7. Go to step 1
+```
+
+As we can see, there is a lot of repetition in the above algorithm. We can simplify it further to the following 3 step process:
+
+```
+1. Get the oldest task in the Macrotask queue, place it on the stack, run it, then remove it
+2. Run all available tasks in the Microtask queue, place them on the stack, run them, then remove them
+3. Go to step 1
+```
+
+All of the behavior mentioned above is described in more detail, and standardized in the HTML standard. The [processing model](https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model) for the event loop is worth a read for a deeper understanding. I hope that the diagram above paired with the algorithm provide some clarity on the event loop and it's purpose.

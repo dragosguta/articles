@@ -2,6 +2,7 @@
 title: A state of Javascript 2021
 date: "2021-03-14"
 tags: [javascript]
+abstract: "A look at what's coming in the new ECMA 2021 standard, including features that have already been part of the TypeScript language for some time."
 ---
 
 We saw a lot of great improvements to the JavaScript language in 2020 with the release
@@ -13,38 +14,47 @@ an (almost) daily basis. I'll also talk about some of the changes that will be c
 ## Features in ES2020
 
 ### 1. Nullish coalescing
+
 This one should be familiar to all of you out there using TypeScript 3.7+. I've certainly been using
 it for some time now and it's great to see it officially integrated in ES2020. Essentially, the new `??`
 operator enables a fallback to a specific value when an `undefined` or `null` is encountered. Here's an example:
+
 ```js
 /** Fallback if "potentiallyNullString" is null or undefined */
-const someValue = potentiallyNullString ?? 'A default string';
+const someValue = potentiallyNullString ?? "A default string";
 
 /** Functionally equivalent to */
-const someValue = potentiallyNullString !== null && potentiallyNullString !== undefined
-  ? potentiallyNullString
-  : 'A default string';
+const someValue =
+  potentiallyNullString !== null && potentiallyNullString !== undefined
+    ? potentiallyNullString
+    : "A default string";
 ```
+
 Not only does the _nullish coalescing_ operator make the code block more concise, it also provides some
 solid protection for previous use cases of the `||` operator. Here's another example:
+
 ```js
-const someValue = emptyString || 'A default string';
+const someValue = emptyString || "A default string";
 ```
+
 It's possible that in the above code block, the `someValue` variable _should_ default to an empty string.
 However in this case, it won't, it will default to `A default string` due to the logical _or_ operator
 and the fact that the empty string is falsy. The nullish coalescing operator introduces safeguards and
 provides great handling for edge cases when encountering falsy values such as `0`, `NaN` or `''`.
 
 ### 2. Optional chaining
+
 This one goes hand in hand with the nullish coalsecing operator. Also introduced in TypeScript 3.7,
 optional chaining allows code to stop executing if a `null` or `undefined` is encountered. Optional chaining
 is even more useful when combined with the nullish coalsecing operator to set defaults. Here's an example:
-```js
 
+```js
 /** Optionally call a function or return an empty array  */
 const result = state.value?.action() ?? [];
 ```
+
 Optional chaining also simplifies code that checks for properties on objects:
+
 ```js
 
 /** Before */
@@ -55,10 +65,12 @@ if (state?.value?.x) { ... }
 ```
 
 ### 3. Promise.allSettled
+
 Similar to `Promise.all` or `Promise.race`, this enhancement runs all promises regardless of the results.
 This is especially useful when performing several network requests in parallel, where _some_ of the requests
 might either fail or return an error, and others might succeed.
 `Promise.allSettled` shines when each request is not dependent on another to complete successfully.
+
 ```js
 
 /** Perform the network requests */
@@ -79,8 +91,10 @@ const [errors, results] = requests.reduce((accum, request) => {
 ## Features in ES2021
 
 ### 1. Logical assignment operators
+
 Three new operators are proposed for the release in mid of this year. The `&&=`, `||=`, and `??=`
 operators all allow conditional variable assignment. Here are a few examples:
+
 ```js
 /** Assign y to x if x is falsy */
 const x ||= y;
@@ -91,38 +105,51 @@ const x &&= y;
 /** Assign y to x if x is null/undefined */
 const x ??= y;
 ```
+
 I don't immediately see myself using these operators, but I will keep them in mind. Personally,
 I think the last one, the `??=` would be the most useful.
 
 ### 2. String.replaceAll
+
 Yes! I feel like I have been constantly reimplementing this across different projects, so it is great
 to see it added as a core functionality. As you might have guessed, `replaceAll` replaces all
 occurances of a string/pattern with the second parameter passed into it. Consider it a sequal to the
 built in `replace` function for strings.
-```js
-const str = 'Bob is a builder. Bob builds the best fences.';
 
-const first = str.replace('Bob', 'Tom'); // Tom is a builder. Bob builds the best fences.
-const second = str.replaceAll('Bob', 'Tom'); // Tom is a builder. Tom builds the best fences.
+```js
+const str = "Bob is a builder. Bob builds the best fences.";
+
+const first = str.replace("Bob", "Tom"); // Tom is a builder. Bob builds the best fences.
+const second = str.replaceAll("Bob", "Tom"); // Tom is a builder. Tom builds the best fences.
 ```
 
 ### 3. Promise.any
+
 Similar to `Promise.allSettled` but with a twist. The new `.any()` method on `Promise` takes an array of
 promises and resolves with the first (read: fastest) successful promise. Otherwise, it rejects if all promises reject.
 On the surface, this doesn't seem all that useful, however one interesting use case could be loading external
 resources from the _fastest_ server. Consider a browser client application with the following:
+
 ```js
 const resource = await Promise.any([
-  fetch('https://us.example.com/resource-a').then(response => response.json()),
-  fetch('https://uk.example.com/resource-a').then(response => response.json()),
-  fetch('https://jp.example.com/resource-a').then(response => response.json())
+  fetch("https://us.example.com/resource-a").then((response) =>
+    response.json()
+  ),
+  fetch("https://uk.example.com/resource-a").then((response) =>
+    response.json()
+  ),
+  fetch("https://jp.example.com/resource-a").then((response) =>
+    response.json()
+  ),
 ]);
 ```
+
 Notice how in the example above, we are requesting a resource from a region specific endpoint. Using `Promise.any`
 enables this kind of functionality, where the application interacts with the _fastest_ server relative to
 the geographical location of the client.
 
 ### 4. Numeric separator and Weakref
+
 Lastly, there are two other new features introduced. The first, the Numeric separator is a readability improvement
 for displaying large numbers, i.e. 123456789 can become 123_456_789 while still behaving as a number.
 
